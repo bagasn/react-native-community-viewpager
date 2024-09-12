@@ -1,0 +1,83 @@
+# Orb support is from version >= 2.1
+version: 2.1
+
+# Make sure you use the latest version of the Orb!
+orbs:
+  rn: react-native-community/react-native@4.4.2
+
+# Custom jobs which are not part of the Orb
+jobs:
+  checkout_code:
+    executor: rn/linux_js
+    steps:
+      - checkout
+      - persist_to_workspace:
+          root: .
+          paths: 
+            - .
+  install-dependencies:
+    executor: rn/linux_js
+    steps:
+      - attach_workspace:
+          at: .
+      - restore_cache:
+          keys:
+            - dependencies-{{ checksum "package.json" }}
+            - dependencies-
+      - restore_cache:
+          keys:
+            - dependencies-example-{{ checksum "example/package.json" }}
+            - dependencies-example-
+      - run:
+          name: Install dependencies
+          command: |
+            yarn install --cwd example --frozen-lockfile
+            yarn install --frozen-lockfile
+      - save_cache:
+          key: dependencies-{{ checksum "package.json" }}
+          paths: 
+            - node_modules
+      - save_cache:
+          key: dependencies-example-{{ checksum "example/package.json" }}
+          paths: 
+            - example/node_modules
+      - persist_to_workspace:
+          root: .
+          paths: 
+            - .
+  analyse_js:
+    executor: rn/linux_js
+    steps:
+      - attach_workspace:
+          at: .
+      - rn/yarn_install
+      - run:
+          name: Run ESLint
+          command: yarn lint
+      - run:
+          name: Typescript
+          command: yarn typescript
+
+workflows:
+  test:
+    jobs:
+      # Checkout the code and persist to the Workspace
+      # Note: This is a job which is defined above and not part of the Orb
+      - checkout_code
+      - install-dependencies:
+          requires:
+            - checkout_code
+
+      # Analyze the Javascript using ESLint, Flow, and Jest
+      # Note: This is a job which is defined above and not part of the Orb
+      - analyse_js:
+          requires:
+            - install-dependencies
+
+      # Build the Android app in debug mode
+      - rn/android_build:
+          name: build_android
+          project_path: "example/android"
+          build_type: debug
+          requires:
+            - analyse_js
